@@ -1,8 +1,8 @@
 # 🚀 Republic AI Testnet Complete Mining Guide
 ### CPU Validator (VPS) + GPU Worker (Laptop)
 
-**Author:** 0xDarkSeidBull | [republicstats.xyz](https://republicstats.xyz)  
-**Twitter:** [@cryptobhartiyax](https://x.com/cryptobhartiyax)  
+**Author:** 0xDarkSeidBull | [republicstats.xyz](https://republicstats.xyz)
+**Twitter:** [@cryptobhartiyax](https://x.com/cryptobhartiyax)
 **GitHub:** [0xDarkSeidBull](https://github.com/0xDarkSeidBull)
 
 ---
@@ -15,131 +15,88 @@ VPS (Hetzner / DigitalOcean)          Windows Laptop (NVIDIA GPU)
 │  republicd node (synced) │          │  WSL2 + Ubuntu           │
 │  vps_worker_multi.sh     │◀─SSH────▶│  gpu_worker_multi.sh     │
 │  5 parallel slots        │◀─SCP────▶│  Docker GPU inference    │
-│  fix_exec.sh (auto-fix)  │          │                          │
+│  fix_exec_loop.sh        │          │                          │
 └──────────────────────────┘          └──────────────────────────┘
 ```
 
 ---
 
-PART 1 CPU Validator Setup (VPS)
-Get a VPS
+# PART 1 — CPU Validator Setup (VPS)
 
--Hetzner (recommended): 
-[hetzner.com](https://console.hetzner.com/)  CPX21 or higher
+## Get a VPS
 
--DigitalOcean (free credits): 
-[digitalocean.com](https://m.do.co/c/b91c4951c91b)
+- **Hetzner (recommended):** [hetzner.com](https://console.hetzner.com/) — CPX21 or higher
+- **DigitalOcean (free credits):** [digitalocean.com](https://m.do.co/c/b91c4951c91b)
+- **Minimum specs:** 2 CPU, 4GB RAM, 80GB SSD, Ubuntu 24.04
 
--Minimum: 2 CPU, 4GB RAM, 80GB SSD, Ubuntu 24.04
+---
 
+## Step 1 — Update Server
 
-# 1. Update Server
-
-```
+```bash
 sudo apt update && sudo apt upgrade -y
-```
-
-Install dependencies:
-
-```
 sudo apt install curl git wget htop tmux build-essential jq make lz4 gcc unzip -y
 ```
 
 ---
 
-# 2. Install Go
+## Step 2 — Install Go
 
-```
+```bash
 cd $HOME
-
 sudo rm -rf /usr/local/go
-
-VER="1.25.5"
-
+VER="1.22.5"
 curl -Ls https://go.dev/dl/go$VER.linux-amd64.tar.gz | sudo tar -xzf - -C /usr/local
-```
-
-Add Go to PATH:
-
-```
 echo "export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin" >> $HOME/.bash_profile
 source $HOME/.bash_profile
-```
-
-Verify installation:
-
-```
 go version
-```
-
-Expected output:
-
-```
-go version go1.25.5 linux/amd64
+# Expected: go version go1.22.5 linux/amd64
 ```
 
 ---
 
-# 3. Install republicd Binary
+## Step 3 — Install republicd Binary
 
-```
+```bash
 cd $HOME
-
 wget https://github.com/RepublicAI/networks/releases/download/v0.1.0/republicd-linux-amd64 -O republicd
-
 chmod +x republicd
-
 sudo mv republicd /usr/local/bin/republicd
-```
-
-Verify installation:
-
-```
 republicd version
 ```
 
 ---
 
-# 4. Download Genesis File
+## Step 4 — Download Genesis File
 
-```
+```bash
 curl -L https://raw.githubusercontent.com/RepublicAI/networks/main/testnet/genesis.json \
--o $HOME/.republic/config/genesis.json
+  -o $HOME/.republic/config/genesis.json
 ```
 
 ---
 
-# 5. Configure Peers
+## Step 5 — Configure Peers
 
-Fetch active peers automatically:
+```bash
+peers=$(curl -sS https://rpc-t.republic.vinjan-inc.com/net_info | \
+  jq -r '.result.peers[] | "\(.node_info.id)@\(.remote_ip):\(.node_info.listen_addr)"' | \
+  awk -F ':' '{print $1":"$(NF)}' | paste -sd "," -)
 
-```
-peers=$(curl -sS https://rpc-t.republic.vinjan-inc.com/net_info | jq -r '.result.peers[] | "\(.node_info.id)@\(.remote_ip):\(.node_info.listen_addr)"' | awk -F ':' '{print $1":"$(NF)}' | paste -sd "," -)
-```
-
-Add them to config:
-
-```
 sed -i "s/^persistent_peers *=.*/persistent_peers = \"$peers\"/" $HOME/.republic/config/config.toml
-```
-
-Disable seeds:
-
-```
 sed -i 's/^enable *=.*/enable = false/' $HOME/.republic/config/config.toml
 sed -i 's/^seeds *=.*/seeds = ""/' $HOME/.republic/config/config.toml
 ```
 
 ---
 
-# 6. Start Node (Initial Run)
+## Step 6 — Start Node (Initial Run)
 
-```
+```bash
 republicd start --chain-id raitestnet_77701-1
 ```
 
 You will see logs like:
-
 ```
 finalized block
 executed block
@@ -147,164 +104,78 @@ committed state
 indexed block events
 ```
 
-Now stop the node:
-
+Stop the node:
 ```
 CTRL + C
 ```
 
 ---
 
-# 7. Install Snapshot Tools
+## Step 7 — Download Latest Snapshot
 
-```
+This syncs your node instantly instead of waiting hours.
+
+```bash
 sudo apt install lz4 -y
-```
-
----
-
-# 8. Download Latest Snapshot
-
-This step **syncs your node instantly** instead of waiting hours.
-
-```
 curl -L https://snapshot.vinjan-inc.com/republic/latest.tar.lz4 \
-| lz4 -dc - | tar -xf - -C $HOME/.republic
+  | lz4 -dc - | tar -xf - -C $HOME/.republic
 ```
 
 ---
 
-# 9. Start Node
+## Step 8 — Start Node as Service
 
-```
+```bash
 sudo systemctl restart republicd
-```
 
-Check logs:
-
-```
+# Check logs
 sudo journalctl -u republicd -f -o cat
+# Example: INF finalizing commit of block height=684344
 ```
-
-Example:
-
-```
-INF finalizing commit of block
-height=684344
-```
-
-Your node will now reach latest block within minutes.
 
 ---
 
-# 10. Check Sync Status
+## Step 9 — Check Sync Status
 
-```
+```bash
 republicd status | jq '.sync_info'
+# "catching_up": false ✅
 ```
-
-Example output:
-
-```
-"catching_up": false
-```
-
-If `false`, node is fully synced.
 
 ---
 
-# CASE 1 — New User (Create Wallet + Backup)
+## CASE 1 — New User (Create Wallet + Backup)
 
-Create wallet:
-
-```
+```bash
 republicd keys add wallet
 ```
 
 Example output:
-
 ```
 address: rai1xwuht66fmkmzvqsud8px79qgalmqglst57nt92
 name: wallet
 type: local
 ```
 
-You will also receive a **mnemonic phrase**.
+You will also receive a **mnemonic phrase** — save it offline (notepad / paper / password manager). Without it you **cannot recover your wallet**.
 
-Example:
+### Backup Validator Keys
 
-```
-your_mnemonic
-```
-
-### IMPORTANT
-
-Save mnemonic offline:
-
-* Notepad
-* Password manager
-* Paper backup
-
-Without it you **cannot recover your wallet**.
-
----
-
-# Create Backup Folder
-
-```
+```bash
 mkdir ~/republic_backup
-```
 
----
-
-# Backup Validator Keys
-
-These are **most important files**.
-
-```
 cp ~/.republic/config/priv_validator_key.json ~/republic_backup/
-
 cp ~/.republic/data/priv_validator_state.json ~/republic_backup/
-
 cp ~/.republic/config/node_key.json ~/republic_backup/
-```
 
----
-
-# Export Wallet Private Key
-
-```
-republicd keys export wallet
-```
-
-Example:
-
-```
------BEGIN TENDERMINT PRIVATE KEY-----
-kdf: argon2
-salt: 63EC2C786358D1F2CB2B07A5025F2206
-type: eth_secp256k1
-...
------END TENDERMINT PRIVATE KEY-----
-```
-
----
-
-# Compress Backup
-
-```
 tar -czvf republic_backup.tar.gz ~/republic_backup
 ```
 
-Download this file to your local PC.
+> ⚠️ **Download this backup file to your local PC.**
 
----
+### Save Node Information
 
-# Save Node Information
-
-Run:
-
-```
+```bash
 echo "===== REPUBLIC NODE BACKUP =====" && \
 echo "" && \
 echo "Wallet Address:" && republicd keys show wallet -a && \
@@ -318,136 +189,35 @@ echo "" && \
 echo "Node Moniker:" && grep -i moniker ~/.republic/config/config.toml
 ```
 
-Example output:
-
-```
-Wallet Address:
-rai1xwuht66fmkmzvqsud8px79qgalmqglst57nt92
-
-Validator Address:
-raivaloper1xwuht66fmkmzvqsud8px79qgalmqglstntnkwu
-
-Peer ID:
-7756059d95ac36fc89fac2e928931153cd81f6ba
-```
-
 ---
 
-# Checking Validator Private Key (Most Important)
+## CASE 2 — Import Existing Validator
 
-```
-cat ~/.republic/config/priv_validator_key.json
-```
-
-Example:
-
-```
-{
- "priv_key": {
-  "type": "tendermint/PrivKeyEd25519",
-  "value": "9p8adOjGj/nRAVjHbxnzoSjG4g3962zBevIbgHt0/X..."
- }
-}
-```
-
-⚠️ **This key controls your validator. Never share it.**
-
----
-
-# CASE 2 — Import Existing Validator
-
-Import wallet:
-
-```
+```bash
+# Import wallet
 republicd keys add importuser --recover
-```
+# Enter your BIP39 mnemonic when prompted
 
-Enter your **BIP39 mnemonic**.
-
----
-
-# Restore Validator Private Key
-
-Edit file:
-
-```
+# Restore validator private key
 nano ~/.republic/config/priv_validator_key.json
-```
+# CTRL+K to delete all content
+# Paste your backup key
+# CTRL+Y → ENTER to save
 
-Delete existing content:
-
-```
-CTRL + K
-```
-
-Paste your **old backup key**.
-
-Save:
-
-```
-CTRL + Y
-ENTER
-```
-
----
-
-# Set Correct Permissions
-
-```
+# Set correct permissions
 chmod 600 ~/.republic/config/priv_validator_key.json
-
 chmod 600 ~/.republic/data/priv_validator_state.json
-
 chmod 600 ~/.republic/config/node_key.json
-```
 
----
-
-# Restart Node
-
-```
+# Restart node
 sudo systemctl restart republicd
 ```
 
-Check logs:
-
-```
-journalctl -u republicd -f
-```
+> ⚠️ **Never share:** `priv_validator_key.json`, `node_key.json`, mnemonic phrase, or exported private key. These give full control over your validator.
 
 ---
 
-# Verify Validator
-
-```
-republicd query staking validator \
-$(republicd keys show wallet --bech val -a)
-```
-
-Example output:
-
-```
-operator_address: raivaloper1v0tuyrzvcdmw7pqvgce7gd905ge80l09yyewrx
-
-status: BOND_STATUS_UNBONDED
-```
-
-Your validator is successfully imported.
-
 ---
-
-# IMPORTANT SECURITY RULES
-
-Never share:
-
-* `priv_validator_key.json`
-* `node_key.json`
-* mnemonic phrase
-* exported wallet private key
-
-These give **full control over your validator**.
-
-
 
 # PART 2 — GPU Worker Setup (Windows Laptop)
 
@@ -464,8 +234,8 @@ Press `Win + R` → type `cmd` → Enter:
 ```cmd
 nvidia-smi
 ```
-If you see GPU info → driver is installed ✅  
-If not → download driver from [nvidia.com](https://nvidia.com/drivers)
+- GPU info visible → driver installed ✅
+- Nothing shown → download driver from [nvidia.com](https://nvidia.com/drivers)
 
 ---
 
@@ -475,7 +245,7 @@ Open PowerShell as Administrator:
 ```powershell
 wsl --install
 ```
-Restart when asked. After restart, Ubuntu window opens — set username + password.
+Restart when prompted. After restart, an Ubuntu window will open — set your username and password.
 
 ---
 
@@ -489,9 +259,9 @@ Restart when asked. After restart, Ubuntu window opens — set username + passwo
 
 ---
 
-## Step 4 — Install NVIDIA Toolkit in WSL2
+## Step 4 — Install NVIDIA Container Toolkit in WSL2
 
-Open Ubuntu terminal (search "Ubuntu" in Start):
+Open Ubuntu terminal (search "Ubuntu" in Start menu):
 
 ```bash
 curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | \
@@ -579,17 +349,17 @@ docker images | grep republic
 # Generate SSH key
 ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N ""
 
-# Show public key — COPY this
+# Show public key — COPY this output
 cat ~/.ssh/id_ed25519.pub
 ```
 
-**On your VPS — paste the public key:**
+On your VPS, paste the public key:
 ```bash
 echo "PASTE_YOUR_PUBLIC_KEY_HERE" >> ~/.ssh/authorized_keys
 chmod 600 ~/.ssh/authorized_keys
 ```
 
-**Test from laptop:**
+Test from laptop:
 ```bash
 ssh root@YOUR_VPS_IP
 # Should connect WITHOUT password ✅
@@ -600,17 +370,15 @@ ssh root@YOUR_VPS_IP
 ## Step 8 — Download & Configure GPU Worker
 
 ```bash
-# Create job directory
 mkdir -p /var/lib/republic/jobs
 cd /var/lib/republic/jobs
 
-# Download script
 wget https://raw.githubusercontent.com/0xDarkSeidBull/republic-miner-scripts/main/gpu_worker_multi.sh
 chmod +x gpu_worker_multi.sh
 
 # Edit — set your VPS IP
 nano gpu_worker_multi.sh
-# Change: VPS="YOUR_VPS_IP"  →  e.g. VPSIPADDRESS
+# Change: VPS="YOUR_VPS_IP"  →  e.g. 1.2.3.4
 # Save: Ctrl+X → Y → Enter
 ```
 
@@ -622,7 +390,7 @@ nano gpu_worker_multi.sh
 cd /var/lib/republic/jobs
 screen -dmS republic-gpu bash gpu_worker_multi.sh 5
 
-# Verify
+# Verify — enter screen
 screen -r republic-gpu
 # You should see:
 # [GPU1] Got job: 12345
@@ -633,108 +401,312 @@ screen -r republic-gpu
 
 ---
 
----
+## 🔴 Stop GPU Worker
 
-# PART 3 — Management
-
-## 🟢 Start
-
-**VPS:**
 ```bash
-screen -dmS republic-upload python3 -m http.server 8080 --directory /root
-screen -dmS republic-worker bash /root/vps_worker_multi.sh 5
-screen -dmS fix-exec bash /root/fix_exec.sh
-```
+# Stop screen session
+screen -S republic-gpu -X quit
 
-**Laptop:**
-```bash
-screen -dmS republic-gpu bash /var/lib/republic/jobs/gpu_worker_multi.sh 5
-```
-
----
-
-## 🔴 Stop
-
-**VPS:**
-```bash
-pkill -f vps_worker_multi
-pkill -f fix_exec
-```
-
-**Laptop:**
-```bash
+# Or kill process directly
 pkill -f gpu_worker_multi
+
+# Stop all running Docker containers
 docker stop $(docker ps -q) 2>/dev/null
 ```
 
 ---
 
-## ✅ Check Status
+## 📊 Check GPU Logs
 
-**VPS:**
 ```bash
-# Worker logs
-tail -f /root/worker_logs/slot_1.log
-
-# Active jobs
-ls /root/job_*.txt 2>/dev/null
-
-# Pending jobs on chain
-republicd query computevalidation list-job -o json --limit 10000 | \
-  jq '[.jobs[] | select(.status == "PendingExecution" and .target_validator == "YOUR_VALOPER")] | length'
-```
-
-**Laptop:**
-```bash
-# GPU logs
+# GPU slot 1 log
 tail -f /var/lib/republic/jobs/gpu_slot_1.log
 
-# Docker containers
+# Enter screen session
+screen -r republic-gpu
+# Detach: Ctrl+A then D
+
+# Check running Docker containers
 docker ps
+```
+
+> ⚠️ **Important:** Docker Desktop must be running on Windows at all times for Docker to work inside WSL2.
+
+---
+
+---
+
+# PART 3 — VPS Worker Scripts Setup
+
+> ✅ Complete GPU setup (Part 2) before starting this part.
+
+---
+
+## Step 1 — Start HTTP Server
+
+An HTTP server is required so the GPU worker can upload inference results to the VPS.
+
+```bash
+mkdir -p /root/results_backup
+screen -dmS republic-upload python3 -m http.server 8080 --directory /root
+screen -ls | grep upload
+# republic-upload (Detached) should be visible ✅
 ```
 
 ---
 
-## 📊 Stats
+## Step 2 — Download & Configure vps_worker_multi.sh
 
-Visit [republicstats.xyz](https://republicstats.xyz) or:
+```bash
+cd /root
+wget https://raw.githubusercontent.com/0xDarkSeidBull/republic-miner-scripts/main/vps_worker_multi.sh
+chmod +x vps_worker_multi.sh
+nano vps_worker_multi.sh
+```
+
+**Change these 2 values:**
+```bash
+WALLET="YOUR_WALLET_NAME"      # e.g. mywallet
+VALOPER="YOUR_VALOPER_ADDRESS" # e.g. raivaloper1xxxx...
+```
+
+To find your valoper address:
+```bash
+republicd keys show YOUR_WALLET_NAME --bech val -a
+```
+
+Save: `Ctrl+X → Y → Enter`
+
+---
+
+## Step 3 — Create fix_exec_loop.sh (Bug Fixed Version)
+
+> ⚠️ **The original script had a bug** — a closing quote `"` was missing in the result URL and `YOUR_SERVER_IP` was never replaced, causing the script to crash. The fixed version below uses `localhost` since this script runs on the VPS itself.
+
+```bash
+cat > /root/fix_exec_loop.sh << 'EOF'
+#!/bin/bash
+# ============================================================
+# Republic AI Testnet — Fix Exec Loop (FIXED)
+# Author: 0xDarkSeidBull
+# Fix: closing quote added, localhost used instead of server IP
+# ============================================================
+WALLET="YOUR_WALLET_NAME"          # ← change this
+CHAIN_ID="raitestnet_77701-1"
+FEES="200000000000000arai"
+VALOPER=$(republicd keys show $WALLET --bech val -a)
+LOCKFILE="/tmp/republic_tx.lock"
+LOG="/root/worker_logs/fix_exec.log"
+
+mkdir -p /root/worker_logs /root/results_backup
+
+echo "$(date '+%H:%M:%S') Fix Exec Loop Started | Valoper: $VALOPER" | tee -a $LOG
+
+while true; do
+  JOBS=$(republicd query computevalidation list-job -o json --limit 120000 2>/dev/null | \
+    jq -r '.jobs[] | select(.status == "PendingExecution" and .target_validator == "'$VALOPER'") | .id')
+
+  TOTAL=$(echo "$JOBS" | grep -c '[0-9]' 2>/dev/null || echo 0)
+  echo "$(date '+%H:%M:%S') PendingExecution jobs: $TOTAL" | tee -a $LOG
+
+  for JOB_ID in $JOBS; do
+    RESULT="/root/result_${JOB_ID}.json"
+    BACKUP="/root/results_backup/result_${JOB_ID}.json"
+
+    if [ -f "$RESULT" ]; then
+      FILE="$RESULT"
+    elif [ -f "$BACKUP" ]; then
+      cp "$BACKUP" "$RESULT"
+      FILE="$RESULT"
+    else
+      echo "$(date '+%H:%M:%S') [$JOB_ID] Result file not found, skipping..." | tee -a $LOG
+      continue
+    fi
+
+    SHA256=$(sha256sum "$FILE" | awk '{print $1}')
+
+    (
+      flock -x 200
+
+      republicd tx computevalidation submit-job-result \
+        "$JOB_ID" \
+        "http://localhost:8080/result_${JOB_ID}.json" \
+        "example-verification:latest" \
+        "$SHA256" \
+        --from "$WALLET" \
+        --chain-id "$CHAIN_ID" \
+        --fees "$FEES" \
+        --generate-only > /tmp/fe_u.json 2>>$LOG
+
+      [ ! -s /tmp/fe_u.json ] && echo "$(date '+%H:%M:%S') [$JOB_ID] generate-only failed" | tee -a $LOG && exit 0
+
+      python3 -c "
+import json, sys
+try:
+    tx = json.load(open('/tmp/fe_u.json'))
+    tx['body']['messages'][0]['validator'] = '$VALOPER'
+    json.dump(tx, open('/tmp/fe_f.json', 'w'))
+except Exception as e:
+    print(f'ERROR: {e}', file=sys.stderr)
+    sys.exit(1)
+" 2>>$LOG
+
+      [ $? -ne 0 ] && echo "$(date '+%H:%M:%S') [$JOB_ID] Python patch failed" | tee -a $LOG && exit 0
+
+      republicd tx sign /tmp/fe_f.json \
+        --from "$WALLET" \
+        --chain-id "$CHAIN_ID" \
+        --output-document /tmp/fe_s.json 2>>$LOG
+
+      TX=$(republicd tx broadcast /tmp/fe_s.json \
+        --node tcp://localhost:26657 -o json 2>>$LOG | jq -r '.txhash')
+
+      echo "$(date '+%H:%M:%S') [$JOB_ID] ✅ Submitted | TX: $TX" | tee -a $LOG
+      sleep 7
+
+    ) 200>$LOCKFILE
+  done
+
+  echo "$(date '+%H:%M:%S') Cycle complete — sleeping 5 minutes..." | tee -a $LOG
+  sleep 300
+done
+EOF
+
+chmod +x /root/fix_exec_loop.sh
+```
+
+Now set your wallet name:
+```bash
+nano /root/fix_exec_loop.sh
+# Change: WALLET="YOUR_WALLET_NAME"  ← your actual wallet name
+# Save: Ctrl+X → Y → Enter
+```
+
+---
+
+## Step 4 — Start Everything (Correct Order)
+
+```bash
+# 1️⃣ HTTP Server (always start first)
+screen -dmS republic-upload python3 -m http.server 8080 --directory /root
+
+# 2️⃣ VPS Worker (5 slots)
+screen -dmS republic-worker bash /root/vps_worker_multi.sh 5
+
+# 3️⃣ Fix Exec Loop
+screen -dmS fix-exec bash /root/fix_exec_loop.sh
+
+# ✅ Verify all screens are running
+screen -ls
+```
+
+Expected output:
+```
+3 Sockets in /run/screen/S-root:
+  republic-upload   (Detached)
+  republic-worker   (Detached)
+  fix-exec          (Detached)
+```
+
+---
+
+## 📊 Check Logs
+
+```bash
+# VPS worker slot logs
+tail -f /root/worker_logs/slot_1.log
+
+# Fix exec loop log
+tail -f /root/worker_logs/fix_exec.log
+
+# Main summary log
+tail -f /root/worker_logs/vps_worker.log
+
+# Enter a screen session
+screen -r republic-worker
+# Detach: Ctrl+A then D
+
+# Count pending jobs on chain
+republicd query computevalidation list-job -o json --limit 10000 | \
+  jq '[.jobs[] | select(.status == "PendingExecution")] | length'
+```
+
+---
+
+## 🔴 Stop Everything
+
+```bash
+# Kill all worker processes at once
+pkill -f vps_worker_multi
+pkill -f fix_exec_loop
+pkill -f "http.server"
+
+# Or close screens individually
+screen -S republic-worker -X quit
+screen -S fix-exec -X quit
+screen -S republic-upload -X quit
+```
+
+---
+
+---
+
+# PART 4 — Stats & Monitoring
 
 ```bash
 curl -s https://api.republicstats.xyz/api/leaderboard?limit=20 | \
   jq '.[] | select(.address == "YOUR_RAI_ADDRESS")'
 ```
 
+Or visit [republicstats.xyz](https://republicstats.xyz)
+
 ---
 
-## ❓ Troubleshooting
+# ❓ Troubleshooting
 
 | Problem | Fix |
 |---------|-----|
-| `SSH connection refused` | `ufw allow 22` on VPS |
-| `docker: command not found` | Restart WSL terminal |
-| `No job_id, retry 10s` | Normal — chain congestion, auto-retries |
-| `Result missing` | GPU inference failed — check `docker logs` |
-| `sequence mismatch` | Normal — flock handles automatically |
-| High RAM on VPS | `systemctl restart republicd` |
-| Node not syncing | Add more peers or use fresh snapshot |
+| SSH connection refused | Run `ufw allow 22` on VPS |
+| `docker: command not found` in WSL2 | Restart WSL terminal; make sure Docker Desktop is open |
+| `No job_id, retry 10s` | Normal — chain congestion, script auto-retries |
+| Result file missing | GPU inference failed — check `docker logs` and `gpu_slot_1.log` |
+| `sequence mismatch` error | Normal — `flock` handles this automatically |
+| High RAM on VPS | Run `sudo systemctl restart republicd` |
+| Node not syncing | Download a fresh snapshot or add more peers |
+| Screen not visible in `screen -ls` | Re-run the `screen -dmS` start command |
+| HTTP server port 8080 busy | Run `pkill -f "http.server"` then restart it |
 
 ---
 
-## 💡 Tips
+# 💡 Tips
 
-- **5 slots** gives best performance
-- **fix_exec.sh** recovers missed jobs automatically — always keep it running
-- Restart `republicd` every 3 days (prevents RAM leak):
+- **5 slots is optimal** — running more slots does not improve performance
+- **Always keep fix_exec_loop.sh running** — it automatically recovers missed or stuck jobs
+- **Restart republicd every 3 days** to prevent RAM leak:
   ```bash
   echo "0 4 */3 * * systemctl restart republicd" | crontab -
   ```
-- Keep Docker Desktop running on Windows for WSL Docker to work
+- **Keep Docker Desktop running** on Windows at all times for WSL2 Docker to work
+- **Results are backed up** automatically in `/root/results_backup/`
+
+---
+
+# 🐛 Bug Fixed in fix_exec_loop.sh
+
+The original script had a broken line:
+```bash
+# ❌ ORIGINAL (BROKEN) — closing quote missing, placeholder IP never replaced
+"http://YOUR_SERVER_IP:8080/result_${JOB_ID}.json \
+
+# ✅ FIXED — closing quote added, localhost used (script runs on VPS)
+"http://localhost:8080/result_${JOB_ID}.json" \
+```
 
 ---
 
 ⭐ **Star the repo if this helped!**
 
-**Author:** 0xDarkSeidBull  
-**Twitter:** [@cryptobhartiyax](https://x.com/cryptobhartiyax)  
-**Website:** [republicstats.xyz](https://republicstats.xyz)  
+**Author:** 0xDarkSeidBull
+**Twitter:** [@cryptobhartiyax](https://x.com/cryptobhartiyax)
+**Website:** [republicstats.xyz](https://republicstats.xyz)
 **GitHub:** [0xDarkSeidBull](https://github.com/0xDarkSeidBull)

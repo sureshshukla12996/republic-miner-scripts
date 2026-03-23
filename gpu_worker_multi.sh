@@ -4,7 +4,7 @@
 # Author: 0xDarkSeidBull | https://github.com/0xDarkSeidBull
 # ============================================================
 # CONFIGURATION — PUT YOUR DETAILS HERE
-VPS="YOUR_VPS_IP"                       
+VPS="20.2.88.32"                       
 SLOTS=${1:-5}
 JOB_DIR=/var/lib/republic/jobs
 # ============================================================
